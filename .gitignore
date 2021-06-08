@@ -1,0 +1,12 @@
+CMakeFiles/*
+build/*
+Testing/*
+osc_udp_serial_bridge
+Makefile
+CTestTestfile.CMakeFiles
+CPack*
+CMakeCache*
+cmake_install.*
+DartConfiguration.*
+CTestTestfile.cmake
+.vscode/*
