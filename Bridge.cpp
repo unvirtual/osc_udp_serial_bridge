@@ -1,14 +1,36 @@
 #include "Bridge.hpp"
 
-Bridge::Bridge(boost::asio::io_context &io_context, int udp_remote_port, int udp_local_port, const std::string& serial_port)
+Bridge::Bridge(boost::asio::io_context &io_context, int udp_remote_port, int udp_local_port)
     : remote_endpoint_(udp::endpoint(udp::v4(), udp_remote_port)),
       socket_(io_context, udp::endpoint(udp::v4(), udp_local_port)),
-      serial_port_{io_context, serial_port},
+      serial_port_{io_context},
+      serial_connected_{false},
       n_serial_writes_(0) {
     udp_recv_buffer_.resize(4096);
     serial_recv_buffer_.resize(4096);
-    do_read_udp();
+}
+
+void
+Bridge::open_serial_port(const std::string& serial_port_name) {
+    serial_port_.open(serial_port_name);
+    serial_connected_ = true;
+}
+
+void 
+Bridge::disconnect_serial() {
+    serial_port_.cancel();
+    serial_port_.close();
+    serial_connected_ = false;
+}
+
+void 
+Bridge::run_serial() {
     do_read_serial();
+}
+
+void 
+Bridge::run_udp() {
+    do_read_udp();
 }
 
 void
@@ -28,10 +50,12 @@ Bridge::read_udp_complete(const boost::system::error_code &error, std::size_t by
             std::scoped_lock serial_write_queue_lock(serial_write_queue_mutex_);
             std::copy(encoded.begin(), encoded.end(), std::back_inserter(serial_write_queue_));
         }
-        do_write_serial();
+        if(serial_connected_) {
+            do_write_serial();
+        }
         do_read_udp();
     } else {
-        std::cout << "ERROR: " << error.message() << std::endl;
+        std::cout << "ERROR read udp: " << error.message() << std::endl;
     }
 }
 
@@ -65,7 +89,7 @@ Bridge::do_write_udp() {
 void
 Bridge::write_udp_complete(const boost::system::error_code &error, size_t bytes_transferred) {
     if (error) {
-        std::cout << "ERROR: " << error.message() << std::endl;
+        std::cout << "ERROR write udp: " << error.message() << std::endl;
     }
     if (!error) {
         {
@@ -98,7 +122,8 @@ Bridge::read_serial_complete(const boost::system::error_code &error, std::size_t
         do_write_udp();
         do_read_serial();
     } else {
-        std::cout << "ERROR: " << error.message() << std::endl;
+        std::cout << "ERROR read serial: " << error.message() << std::endl;
+        throw(0);
     }
 }
 
@@ -128,16 +153,13 @@ Bridge::do_write_serial() {
 void
 Bridge::write_serial_complete(const boost::system::error_code &error, size_t bytes_transferred) {
     --n_serial_writes_;
-    if (!error)
-    {
+    if (!error) {
         {
             std::scoped_lock serial_write_buffer_lock(serial_write_buffer_mutex_);
             serial_write_buffer_.clear();
         }
         do_write_serial();
-    }
-    else
-    {
+    } else {
         std::cout << "ERROR DURING SERIAL WRITE " << error.message() << std::endl;
     }
 }

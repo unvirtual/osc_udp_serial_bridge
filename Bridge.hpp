@@ -17,7 +17,11 @@ using boost::asio::ip::udp;
 
 class Bridge {
     public:
-        Bridge(boost::asio::io_context &io_context, int udp_remote_port, int udp_local_port, const std::string& serial_port);
+        Bridge(boost::asio::io_context &io_context, int udp_remote_port, int udp_local_port);
+        void open_serial_port(const std::string& serial_port_name);
+        void disconnect_serial();
+        void run_serial();
+        void run_udp();
 
     private:
         void do_read_udp();
@@ -48,6 +52,7 @@ class Bridge {
         std::mutex serial_write_buffer_mutex_;
         std::mutex serial_write_queue_mutex_;
 
+        bool serial_connected_;
         int n_serial_writes_;
 };
 
