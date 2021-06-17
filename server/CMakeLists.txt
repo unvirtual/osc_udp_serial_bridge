@@ -1,0 +1,5 @@
+add_executable(udp_serial_bridge_server main.cpp)
+target_compile_features(udp_serial_bridge_server PRIVATE cxx_std_17)
+
+target_link_libraries(udp_serial_bridge_server PRIVATE osc_serial_bridge_lib)
+target_link_libraries(udp_serial_bridge_server PUBLIC PkgConfig::LIBUSBP)

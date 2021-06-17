@@ -9,22 +9,22 @@ if(NOT CMAKE_BUILD_TYPE)
   set(CMAKE_BUILD_TYPE Release)
 endif()
 
+find_package(Boost REQUIRED)
+
 set(CMAKE_CXX_FLAGS "-Wall -Wextra")
 set(CMAKE_CXX_FLAGS_DEBUG "-g")
 set(CMAKE_CXX_FLAGS_RELEASE "-O3")
 
-include(CTest)
-enable_testing()
+#include(CTest)
+#enable_testing()
 
 find_package(PkgConfig REQUIRED)
 pkg_check_modules(LIBUSBP REQUIRED IMPORTED_TARGET libusbp-1)
 
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -pthread")
-add_executable(osc_udp_serial_bridge Bridge.cpp SLIP.cpp main.cpp)
 
-target_link_libraries(osc_udp_serial_bridge PUBLIC PkgConfig::LIBUSBP)
+# The compiled library code is here 
+add_subdirectory(src) 
 
-
-set(CPACK_PROJECT_NAME ${PROJECT_NAME})
-set(CPACK_PROJECT_VERSION ${PROJECT_VERSION})
-include(CPack)
+## The executable code is here 
+add_subdirectory(server)
