@@ -51,6 +51,7 @@ class Bridge {
         void read_serial_complete(const boost::system::error_code &error, std::size_t bytes_transferred);
 
         void write_serial(const std::vector<std::byte>& data);
+        void do_write_serial();
         void write_serial_complete(const boost::system::error_code &error, size_t bytes_transferred);
 
         void udp_send_serial_status();
@@ -64,9 +65,15 @@ class Bridge {
         boost::asio::serial_port serial_port_;
 
         std::vector<std::byte> serial_recv_buffer_;
+        std::vector<std::byte> serial_send_buffer_;
+        std::vector<std::byte> serial_send_queue_;
+
         std::vector<std::byte> udp_send_buffer_;
-        std::vector<std::byte> udp_recv_buffer_;
         std::vector<std::byte> udp_send_queue_;
+        std::vector<std::byte> udp_recv_buffer_;
+
+        std::mutex serial_send_buffer_mutex_;
+        std::mutex serial_send_queue_mutex_;
 
         std::mutex udp_send_buffer_mutex_;
         std::mutex udp_send_queue_mutex_;

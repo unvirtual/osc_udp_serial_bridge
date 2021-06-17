@@ -4,8 +4,8 @@ Bridge::Bridge(boost::asio::io_context &io_context, int udp_remote_port, int udp
     : remote_endpoint_(udp::endpoint(udp::v4(), udp_remote_port)),
       socket_(io_context, udp::endpoint(udp::v4(), udp_local_port)),
       serial_port_{io_context}, read_serial_count_(0), read_udp_count_(0) {
-    udp_recv_buffer_.resize(4096);
-    serial_recv_buffer_.resize(4096);
+    udp_recv_buffer_.resize(4096*10);
+    serial_recv_buffer_.resize(4096*10);
 }
 
 Bridge::~Bridge() {
@@ -16,6 +16,7 @@ Bridge::~Bridge() {
 void
 Bridge::open_serial_port(const std::string& serial_port_name) {
     serial_port_.open(serial_port_name);
+    serial_port_.set_option( boost::asio::serial_port_base::baud_rate( 2000000 ));
 }
 
 void 
@@ -29,6 +30,7 @@ Bridge::disconnect_serial() {
 void 
 Bridge::disconnect_udp() {
     if(socket_.is_open()) {
+        std::cout << "Socket closed" << std::endl;
         socket_.close();
     }
 }
@@ -98,9 +100,9 @@ Bridge::read_udp_complete(const boost::system::error_code &error, std::size_t by
             do_read_udp();
         } else {
             auto encoded = slip::encode(udp_recv_buffer_.cbegin(), udp_recv_buffer_.cbegin() + bytes_transferred);
-            udp_recv_buffer_.erase(udp_recv_buffer_.begin(), udp_recv_buffer_.begin() + bytes_transferred);
 
             write_serial(encoded);
+            do_read_udp();
         }
     } else {
         std::cerr << "ERROR " << error.value() << " during UDP read: " << error.message() << std::endl;
@@ -175,18 +177,21 @@ Bridge::read_serial_complete(const boost::system::error_code &error, std::size_t
     read_serial_count_--;
     if (!error) {
         std::vector<std::byte> received(serial_recv_buffer_.begin(), serial_recv_buffer_.begin() + bytes_transferred);
-        serial_recv_buffer_.erase(serial_recv_buffer_.begin(), serial_recv_buffer_.begin() + bytes_transferred);
+        if(received[0] == slip::SLIP_END) {
+            slip_encoded_udp_buffer_.append(received);
 
-        slip_encoded_udp_buffer_.append(received);
+            auto [status, data] = slip_encoded_udp_buffer_.get_next_frame();
+            if (status != slip::SLIPInputStream::FrameStatus::VALID) {
+                do_read_serial();
+                return;
+            }
 
-        auto [status, data] = slip_encoded_udp_buffer_.get_next_frame();
+            write_udp(data);
 
-        if (status != slip::SLIPInputStream::FrameStatus::VALID) {
+        } else {
             do_read_serial();
             return;
         }
-        write_udp(data);
-
     } else {
         std::cerr << "ERROR " << error.value() << " during serial read: " << error.message() << std::endl;
         // Throw if serial error happened to exit IOContext. Caller should handle exception.
@@ -196,17 +201,43 @@ Bridge::read_serial_complete(const boost::system::error_code &error, std::size_t
 
 void
 Bridge::write_serial(const std::vector<std::byte>& data) {
-    boost::asio::async_write(serial_port_,
-                                boost::asio::buffer(data),
-                                boost::bind(&Bridge::write_serial_complete, this,
-                                            boost::asio::placeholders::error,
-                                            boost::asio::placeholders::bytes_transferred));
+    {
+        std::scoped_lock serial_send_queue_lock(udp_send_queue_mutex_);
+        std::copy(data.cbegin(), data.cend(), std::back_inserter(serial_send_queue_));
+    }
+    do_write_serial();
 }
 
 void
-Bridge::write_serial_complete(const boost::system::error_code &error, std::size_t /* bytes_transferred */) {
+Bridge::do_write_serial() {
+    std::scoped_lock serial_send_buffer_lock(serial_send_buffer_mutex_);
+    if(serial_send_buffer_.size() != 0) {
+        return;
+    }
+
+    std::scoped_lock serial_send_queue_lock(serial_send_queue_mutex_);
+    if(serial_send_queue_.size() == 0) {
+        return;
+    }
+
+    std::copy(serial_send_queue_.begin(), serial_send_queue_.end(), std::back_inserter(serial_send_buffer_));
+    serial_send_queue_.clear();
+
+    boost::asio::async_write(serial_port_,
+                             boost::asio::buffer(serial_send_buffer_),
+                             boost::bind(&Bridge::write_serial_complete, this,
+                                         boost::asio::placeholders::error,
+                                         boost::asio::placeholders::bytes_transferred));
+}
+
+void
+Bridge::write_serial_complete(const boost::system::error_code &error, std::size_t bytes_transferred) {
     if (!error) {
-        do_read_udp();
+        {
+            std::scoped_lock serial_send_buffer_lock(serial_send_buffer_mutex_);
+            serial_send_buffer_.clear();
+        }
+        do_write_serial();
     } else {
         std::cerr << "ERROR " << error.value() << " during serial write: " << error.message() << std::endl;
         // Throw if serial error happened to exit IOContext. Caller should handle exception.
