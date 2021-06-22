@@ -1,9 +1,13 @@
-# OSC Serial to UDP Bridge
+# OSC Serial UDP Bridge
 
-Work in progress for an OSC bridge between UDP and a serial port.
-OSC packets over serial are SLIP encoded.
+A `boost::asio` based UDP <-> Serial bridge for OSC messages encoded in SLIP.
 
-To start the server simply call:
+Dependencies:
+* Boost
+* [libusbp](https://github.com/pololu/libusbp) (for the executable)
+
+If you encounter issues with dropped UDP packets, increase OS UDP buffers:
 ```
-osc_udp_serial_bridge <remote-udp-port> <local-udp-port> <serial-port>
+$ sudo sysctl -w net.core.rmem_max=26214400
+$ sudo sysctl -w net.core.rmem_default=26214400
 ```
